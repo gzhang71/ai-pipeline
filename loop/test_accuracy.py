@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from common.client import has_credentials
+from common.client import api_is_usable, has_credentials
 from loop.accuracy import (
     Observation,
     analyze_accuracy,
@@ -351,7 +351,7 @@ def test_custom_task_sets_are_supported():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(not has_credentials(), reason="no API credentials in this environment")
+@pytest.mark.skipif(not api_is_usable(), reason="live API not usable (no credentials, or unfunded org)")
 def test_live_smoke_against_the_real_api():  # pragma: no cover - needs credentials
     from common.client import get_client
 

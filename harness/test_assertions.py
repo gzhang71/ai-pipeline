@@ -317,3 +317,54 @@ def test_check_schema_rejects_unsupported_keywords():
         jsonschema.check_schema({"type": "dictionary"})
     with pytest.raises(jsonschema.SchemaError):
         jsonschema.check_schema({"properties": {"a": {"minProperties": 1}}})
+
+
+class TestNoToolCallInText:
+    """A tool call described in prose is a silent failure; make it loud.
+
+    With thinking disabled a model can write an invocation into its visible
+    text instead of emitting a `tool_use` block: the turn succeeds, nothing
+    errors, and the tool never runs. Without this assertion the only way to
+    evaluate a thinking-disabled prompt safely is to forbid the configuration.
+    """
+
+    def test_plain_prose_passes(self, make_output):
+        out = make_output("I will escalate this ticket to tier 2.")
+        assert check({"type": "no_tool_call_in_text"}, out)
+
+    def test_xml_style_invocation_in_text_fails(self, make_output):
+        out = make_output('Let me check.\n<invoke name="lookup_ticket">')
+        assert not check({"type": "no_tool_call_in_text"}, out)
+
+    def test_json_envelope_in_text_fails(self, make_output):
+        out = make_output('{"type": "tool_use", "name": "lookup_ticket"}')
+        assert not check({"type": "no_tool_call_in_text"}, out)
+
+    def test_fenced_tool_block_fails(self, make_output):
+        out = make_output("```tool_use\nlookup_ticket(id='4471')\n```")
+        assert not check({"type": "no_tool_call_in_text"}, out)
+
+    def test_named_invocation_fails_when_names_given(self, make_output):
+        out = make_output("I'll run lookup_ticket('4471') now.")
+        spec = {"type": "no_tool_call_in_text", "names": ["lookup_ticket"]}
+        assert not check(spec, out)
+
+    def test_a_real_tool_call_suppresses_the_check(self, make_output):
+        """Talking about a call while also making one is not a failure."""
+        out = make_output(
+            'Calling <invoke name="lookup_ticket"> now.',
+            tool_calls=(("lookup_ticket", {"id": "4471"}),),
+            stop_reason="tool_use",
+        )
+        assert check({"type": "no_tool_call_in_text"}, out)
+
+    def test_detail_quotes_the_offending_text(self, make_output):
+        out = make_output('Sure.\n<invoke name="lookup_ticket">')
+        result = evaluate({"type": "no_tool_call_in_text"}, out)
+        assert "no tool_use block" in result.detail
+        assert "invoke" in result.detail
+
+    def test_spec_validates_without_extra_keys(self):
+        from harness.assertions import validate_spec
+
+        validate_spec({"type": "no_tool_call_in_text"})

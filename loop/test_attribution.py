@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+from itertools import permutations
+
 import pytest
 
 from common.client import has_credentials
+from common.client import MODEL
 from loop.attribution import (
+    COMPONENTS,
+    MEASUREMENT_ORDER,
+    order_sensitivity,
+    order_sensitivity_text,
+    stable_key,
     CachingTokenCounter,
     attribute,
     block_groups,
@@ -321,3 +329,154 @@ def test_default_counter_is_the_api_and_is_not_reached_offline():
     """Nothing in the default test path may touch the network."""
     client = FakeAnthropicClient([type("R", (), {"content": [text_block("x")], "stop_reason": "end_turn"})()])
     assert client.count_calls == 0
+
+
+# --------------------------------------------------------------------------
+# Measurement order
+# --------------------------------------------------------------------------
+
+
+def _sublinear_counter(*, messages, system=None, tools=None, model=MODEL) -> int:
+    """A deliberately order-SENSITIVE counter.
+
+    The heuristic counter is linear in serialized length, so re-ordering the
+    measurement chain cannot change any segment -- which makes it useless for
+    testing that `order_sensitivity` detects spread. This one is sub-linear, so
+    the marginal cost of a component genuinely depends on how much was already
+    measured, exactly like a real tokenizer merging across boundaries.
+    """
+    payload = stable_key([model, list(messages), system, tools])
+    return int(len(payload) ** 0.9)
+
+
+class TestMeasurementOrder:
+    def test_all_orders_stay_exactly_additive(self, sample_prompt):
+        """Additivity is by construction and must hold under every order."""
+        for order in permutations(COMPONENTS):
+            a = attribute(
+                sample_prompt["messages"],
+                system=sample_prompt["system"],
+                tools=sample_prompt["tools"],
+                counter=heuristic_token_count,
+                measurement_order=order,
+            )
+            assert a.segment_sum == a.counted_total
+            assert a.decomposition_residual == 0
+
+    def test_total_is_invariant_across_orders(self, sample_prompt):
+        totals = {
+            attribute(
+                sample_prompt["messages"],
+                system=sample_prompt["system"],
+                tools=sample_prompt["tools"],
+                counter=heuristic_token_count,
+                measurement_order=order,
+            ).counted_total
+            for order in permutations(COMPONENTS)
+        }
+        assert len(totals) == 1, "re-ordering must not change the prompt's size"
+
+    def test_order_is_recorded_on_the_result(self, sample_prompt):
+        a = attribute(
+            sample_prompt["messages"],
+            system=sample_prompt["system"],
+            tools=sample_prompt["tools"],
+            counter=heuristic_token_count,
+            measurement_order=("system_prompt", "tool_schemas", "messages"),
+        )
+        assert a.measurement_order == (
+            "framing",
+            "system_prompt",
+            "tool_schemas",
+            "messages",
+        )
+
+    def test_default_order_is_unchanged(self, sample_prompt):
+        """Back-compat: omitting the argument keeps the historical order."""
+        a = attribute(
+            sample_prompt["messages"],
+            system=sample_prompt["system"],
+            tools=sample_prompt["tools"],
+            counter=heuristic_token_count,
+        )
+        assert a.measurement_order == MEASUREMENT_ORDER
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            ("messages",),
+            ("messages", "messages", "system_prompt"),
+            ("messages", "tool_schemas", "nonsense"),
+        ],
+    )
+    def test_a_bad_order_is_rejected(self, sample_prompt, bad):
+        with pytest.raises(ValueError, match="permutation"):
+            attribute(
+                sample_prompt["messages"],
+                counter=heuristic_token_count,
+                measurement_order=bad,
+            )
+
+
+class TestOrderSensitivity:
+    def test_linear_counter_reports_zero_spread(self, sample_prompt):
+        """Honest reporting: a linear counter cannot be order-sensitive."""
+        report = order_sensitivity(
+            sample_prompt["messages"],
+            system=sample_prompt["system"],
+            tools=sample_prompt["tools"],
+            counter=heuristic_token_count,
+        )
+        assert report["total_is_invariant"]
+        assert report["max_spread_fraction"] == 0
+        assert report["counter_is_order_sensitive"] is False
+
+    def test_sublinear_counter_reveals_spread(self, sample_prompt):
+        """The sweep must actually detect order-dependence when it exists.
+
+        Without this the zero-spread result above could mean 'no effect' or
+        'the sweep is broken', and there would be no way to tell.
+        """
+        report = order_sensitivity(
+            sample_prompt["messages"],
+            system=sample_prompt["system"],
+            tools=sample_prompt["tools"],
+            counter=_sublinear_counter,
+        )
+        assert report["counter_is_order_sensitive"] is True
+        assert report["max_spread_fraction"] > 0
+        assert report["total_is_invariant"], "the total must still not move"
+
+    def test_report_renders(self, sample_prompt):
+        report = order_sensitivity(
+            sample_prompt["messages"],
+            system=sample_prompt["system"],
+            tools=sample_prompt["tools"],
+            counter=_sublinear_counter,
+        )
+        text = order_sensitivity_text(report)
+        assert "measurement-order sensitivity" in text
+        assert "spread" in text
+
+
+@pytest.fixture
+def sample_prompt() -> dict:
+    """A prompt with all three components non-empty."""
+    return {
+        "messages": [
+            {"role": "user", "content": "What is the amount on INV-1003? " + "ctx " * 30},
+            {"role": "assistant", "content": "Let me check that."},
+            {"role": "user", "content": "Please show your working."},
+        ],
+        "system": "You are a precise billing assistant. " * 10,
+        "tools": [
+            {
+                "name": "lookup",
+                "description": "Look up an invoice by id. " * 3,
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                },
+            }
+        ],
+    }

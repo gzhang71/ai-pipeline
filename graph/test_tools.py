@@ -224,3 +224,48 @@ def test_dispatch_routes_every_tool(sample_tools: GraphTools, name, arguments):
 def test_dispatch_rejects_an_unknown_tool(sample_tools: GraphTools):
     result = sample_tools.call("rm_rf", {})
     assert "error" in result and result["available"] == list(TOOL_NAMES)
+
+
+class TestSearchRanking:
+    """Exact identifiers beat token overlap; tests do not outrank real code."""
+
+    def test_exact_constant_name_ranks_its_module_first(self, sample_tools):
+        """A module-level constant is not a node, so the module must surface.
+
+        Without the exact-identifier bonus, 'MAX_WIDGETS' tokenizes to
+        {'max', 'widgets'} and any symbol whose prose mentions widgets can
+        outrank the module that actually defines the constant.
+        """
+        matches = sample_tools.search_symbols("MAX_WIDGETS")["matches"]
+        assert matches, "expected at least one match"
+        assert matches[0]["symbol_id"] == "app.main"
+
+    def test_exact_symbol_name_ranks_that_symbol_first(self, sample_tools):
+        matches = sample_tools.search_symbols("slugify")["matches"]
+        assert matches[0]["symbol_id"] == "pkg.util:slugify"
+
+    def test_exact_name_outranks_a_camelcase_token_collision(self, sample_tools):
+        """'Widget' must not lose to symbols that merely tokenize the same."""
+        matches = sample_tools.search_symbols("Widget")["matches"]
+        assert matches[0]["symbol_id"] == "pkg.core:Widget"
+
+    def test_case_insensitive_exact_match_still_ranks_high(self, sample_tools):
+        matches = sample_tools.search_symbols("widget")["matches"]
+        assert matches[0]["symbol_id"] == "pkg.core:Widget"
+
+    def test_test_symbols_are_demoted_not_excluded(self, tmp_path):
+        """A test that mentions a symbol must rank below the symbol itself."""
+        repo = tmp_path / "repo"
+        (repo / "pkg").mkdir(parents=True)
+        (repo / "pkg" / "__init__.py").write_text("")
+        (repo / "pkg" / "calc.py").write_text(
+            '"""Math."""\n\n\ndef compute_total(rows):\n    """Compute the total."""\n    return sum(rows)\n'
+        )
+        (repo / "pkg" / "test_calc.py").write_text(
+            '"""Tests."""\n\n\ndef test_compute_total():\n    """compute_total computes the total."""\n    assert True\n'
+        )
+        tools = GraphTools(CodeIndex.build(str(repo)).graph())
+        ids = [m["symbol_id"] for m in tools.search_symbols("compute_total")["matches"]]
+        assert ids[0] == "pkg.calc:compute_total"
+        # Demoted, but still reachable -- sometimes the test is what you want.
+        assert "pkg.test_calc:test_compute_total" in ids

@@ -352,6 +352,22 @@ def prefix_messages(
     return prefix
 
 
+COMPONENTS = ("messages", "tool_schemas", "system_prompt")
+
+
+def _validate_measurement_order(order: Sequence[str] | None) -> tuple[str, ...]:
+    """Normalize a requested order into the three components, framing implied."""
+    if order is None:
+        return COMPONENTS
+    components = tuple(c for c in order if c != "framing")
+    if sorted(components) != sorted(COMPONENTS):
+        raise ValueError(
+            f"measurement_order must be a permutation of {COMPONENTS!r} "
+            f"(framing is always measured first); got {tuple(order)!r}"
+        )
+    return components
+
+
 # --------------------------------------------------------------------------
 # The attribution itself
 # --------------------------------------------------------------------------
@@ -365,6 +381,7 @@ def attribute(
     model: str = MODEL,
     counter: TokenCounter | None = None,
     granularity: str = "block_group",
+    measurement_order: Sequence[str] | None = None,
 ) -> Attribution:
     """Decompose a prompt into per-segment token counts.
 
@@ -374,6 +391,12 @@ def attribute(
       ``message``     -- per message
       ``coarse``      -- four calls total: framing / messages / tools / system
       ``off``         -- one call, total only, no segments
+
+    ``measurement_order`` permutes the three components (``messages``,
+    ``tool_schemas``, ``system_prompt``). Framing is always the base. The
+    decomposition stays exactly additive under every order, but individual
+    segment values shift, because each is a marginal cost given what was
+    measured before it. Use ``order_sensitivity()`` to quantify that.
     """
     if granularity not in ("block_group", "message", "coarse", "off"):
         raise ValueError(f"unknown granularity {granularity!r}")
@@ -410,10 +433,13 @@ def attribute(
             approximate_segments=[],
         )
 
+    components = _validate_measurement_order(measurement_order)
+
     segments: list[Segment] = []
 
     # 1. Framing. No prefix contains framing alone -- the API requires at least
     #    one message -- so we probe with a minimal one and flag the result.
+    #    Framing is always the base of the chain, whatever the component order.
     framing = measure(PROBE_MESSAGES)
     segments.append(
         Segment(
@@ -428,60 +454,62 @@ def attribute(
         )
     )
 
-    # 2. Messages, as a growing prefix chain.
+    # 2. The three components, in the requested order. Each is measured on top
+    #    of everything measured before it, so a segment's number is a *marginal*
+    #    cost given the prefix already present -- which is exactly why the order
+    #    matters and why it is recorded. See `order_sensitivity()`.
     previous = framing
-    if granularity == "coarse":
-        messages_total = measure(plain)
-        segments.append(
-            Segment(
-                segment_id="messages",
-                kind="messages_total",
-                tokens=messages_total - previous,
-                note="all messages as one segment (coarse granularity)",
-            )
-        )
-        previous = messages_total
-    else:
-        for group in block_groups(plain, granularity):
-            at_group = measure(prefix_messages(plain, group))
-            segments.append(
-                Segment(
-                    segment_id=group.segment_id,
-                    kind=group.kind,
-                    tokens=at_group - previous,
-                    message_index=group.message_index,
-                    role=group.role,
-                    block_span=(group.start, group.end),
+    state = {"messages": False, "tools": False, "system": False}
+
+    for component in components:
+        if component == "messages":
+            state["messages"] = True
+            if granularity == "coarse":
+                at = measure(plain, with_tools=state["tools"], with_system=state["system"])
+                segments.append(
+                    Segment(
+                        segment_id="messages",
+                        kind="messages_total",
+                        tokens=at - previous,
+                        note="all messages as one segment (coarse granularity)",
+                    )
                 )
+                previous = at
+            else:
+                for group in block_groups(plain, granularity):
+                    at = measure(
+                        prefix_messages(plain, group),
+                        with_tools=state["tools"],
+                        with_system=state["system"],
+                    )
+                    segments.append(
+                        Segment(
+                            segment_id=group.segment_id,
+                            kind=group.kind,
+                            tokens=at - previous,
+                            message_index=group.message_index,
+                            role=group.role,
+                            block_span=(group.start, group.end),
+                        )
+                    )
+                    previous = at
+        else:
+            key = "tools" if component == "tool_schemas" else "system"
+            payload = tools if key == "tools" else system
+            state[key] = True
+            msgs = plain if state["messages"] else PROBE_MESSAGES
+            at = (
+                measure(msgs, with_tools=state["tools"], with_system=state["system"])
+                if payload
+                else previous
             )
-            previous = at_group
+            segments.append(
+                Segment(segment_id=component, kind=component, tokens=at - previous)
+            )
+            previous = at
 
-    # 3. Tools, then system -- render order among themselves, measured on top
-    #    of the full message list so the deltas are marginal costs against a
-    #    realistic prompt rather than against a stub.
-    with_tools = (
-        measure(plain, with_tools=True) if tools else previous
-    )
-    segments.append(
-        Segment(
-            segment_id="tool_schemas",
-            kind="tool_schemas",
-            tokens=with_tools - previous,
-        )
-    )
-    with_system = (
-        measure(plain, with_tools=True, with_system=True) if system else with_tools
-    )
-    segments.append(
-        Segment(
-            segment_id="system_prompt",
-            kind="system_prompt",
-            tokens=with_system - with_tools,
-        )
-    )
-
-    # Report in render order (tools -> system -> messages) even though we
-    # measured messages first; the ordering used is on the run header.
+    # Report in render order (framing -> tools -> system -> messages) whatever
+    # the measurement order was; the order used is recorded on the run header.
     order = {"framing": 0, "tool_schemas": 1, "system_prompt": 2}
     segments.sort(key=lambda s: order.get(s.kind, 3))
 
@@ -489,8 +517,9 @@ def attribute(
         method=METHOD,
         granularity=granularity,
         segments=segments,
-        counted_total=with_system,
+        counted_total=previous,
         counter_calls=count.calls - calls_before,
+        measurement_order=tuple(("framing",) + components),
     )
 
 
@@ -525,3 +554,118 @@ def reconcile(
         "within_tolerance": abs(fraction) <= tolerance_fraction,
         "tolerance_fraction": tolerance_fraction,
     }
+
+
+def order_sensitivity(
+    messages: Iterable[Any],
+    *,
+    system: Any = None,
+    tools: Any = None,
+    model: str = MODEL,
+    counter: TokenCounter | None = None,
+    granularity: str = "block_group",
+    orders: Sequence[Sequence[str]] | None = None,
+) -> dict[str, Any]:
+    """Quantify how much each segment's value depends on measurement order.
+
+    The decomposition is exactly additive under every order, so the *total*
+    never moves. What moves is the split: each segment is a marginal cost given
+    what was measured before it, so re-ordering shifts tokens between segments
+    wherever the tokenizer merges across a boundary.
+
+    This is the honest error bar on a per-segment number, and until it is
+    measured, "system_prompt cost 113 tokens" is a claim of unknown precision.
+
+    Returns per-kind ``min``/``max``/``spread``/``spread_fraction`` across the
+    orders tried, plus ``max_spread_fraction`` as the headline.
+
+    A linear counter (any chars-per-token heuristic, including the offline test
+    double) is order-independent by construction and will report zero spread.
+    That is a property of the counter, not evidence about the real tokenizer --
+    run this against ``api_token_counter`` for a number that means something.
+    ``counter_is_order_sensitive`` records which case you are in.
+    """
+    from itertools import permutations
+
+    candidates = list(orders) if orders is not None else list(permutations(COMPONENTS))
+    if not candidates:
+        raise ValueError("no measurement orders to compare")
+
+    per_kind: dict[str, list[int]] = {}
+    totals: list[int] = []
+    runs: list[dict[str, Any]] = []
+
+    for order in candidates:
+        attribution = attribute(
+            messages,
+            system=system,
+            tools=tools,
+            model=model,
+            counter=counter,
+            granularity=granularity,
+            measurement_order=order,
+        )
+        totals.append(attribution.counted_total)
+        by_kind: dict[str, int] = {}
+        for segment in attribution.segments:
+            by_kind[segment.kind] = by_kind.get(segment.kind, 0) + segment.tokens
+        for kind, value in by_kind.items():
+            per_kind.setdefault(kind, []).append(value)
+        runs.append({"order": list(order), "by_kind": by_kind})
+
+    kinds: dict[str, Any] = {}
+    for kind, values in sorted(per_kind.items()):
+        low, high = min(values), max(values)
+        spread = high - low
+        denominator = max(abs(sum(values) / len(values)), 1.0)
+        kinds[kind] = {
+            "min": low,
+            "max": high,
+            "mean": round(sum(values) / len(values), 2),
+            "spread": spread,
+            "spread_fraction": round(spread / denominator, 6),
+        }
+
+    max_spread_fraction = max((k["spread_fraction"] for k in kinds.values()), default=0.0)
+    return {
+        "method": METHOD,
+        "granularity": granularity,
+        "orders_compared": len(candidates),
+        "total_is_invariant": len(set(totals)) == 1,
+        "totals": sorted(set(totals)),
+        "kinds": kinds,
+        "max_spread_fraction": max_spread_fraction,
+        "counter_is_order_sensitive": max_spread_fraction > 0,
+        "runs": runs,
+    }
+
+
+def order_sensitivity_text(report: dict[str, Any]) -> str:
+    """Render an `order_sensitivity` report as a small table."""
+    lines = [
+        "measurement-order sensitivity",
+        "=" * 58,
+        f"orders compared: {report['orders_compared']}   "
+        f"total invariant: {report['total_is_invariant']}",
+        "",
+        f"  {'segment kind':<18} {'min':>7} {'max':>7} {'spread':>7} {'spread %':>9}",
+    ]
+    for kind, stats in report["kinds"].items():
+        lines.append(
+            f"  {kind:<18} {stats['min']:>7,} {stats['max']:>7,} "
+            f"{stats['spread']:>7,} {stats['spread_fraction']:>8.2%}"
+        )
+    lines.append("")
+    if not report["counter_is_order_sensitive"]:
+        lines.append(
+            "  Zero spread everywhere. This counter is linear, so order cannot"
+        )
+        lines.append(
+            "  matter to it. Re-run against api_token_counter for a real number."
+        )
+    else:
+        lines.append(
+            f"  Worst per-segment spread: {report['max_spread_fraction']:.2%}. Treat that"
+        )
+        lines.append("  as the error bar on any single segment's value.")
+    return "\n".join(lines)

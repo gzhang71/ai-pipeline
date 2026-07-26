@@ -256,10 +256,15 @@ Stated plainly, because all three are real:
 
 Two further honest caveats:
 
-- **Retrieval quality is the ceiling.** `search_symbols` is lexical too. It ranks
-  `usage_breakdown` and `MIN_CACHEABLE_PREFIX_TOKENS` first, but a query like
-  `"MODEL"` loses to any class whose camelCase name contains "model". A real
-  model can recover by re-querying or walking edges; a fixed policy cannot.
+- **Retrieval quality is the ceiling.** `search_symbols` is lexical. Scoring now
+  adds an exact-identifier bonus and a mild penalty for symbols in test modules,
+  which fixed two concrete failures: `"MODEL"` used to return `ModelSummarizer`
+  and three test functions while the module that actually defines the constant
+  never appeared, and tests outranked the second real implementation of
+  `wilson_interval`. Both now rank correctly. It is still token-overlap scoring
+  underneath — no idf, no semantic similarity — so an unusual phrasing can still
+  miss. A real model recovers by re-querying or walking edges; a fixed policy
+  cannot. Tests are demoted, never excluded: sometimes the test *is* the answer.
 - **The index is only as good as the last refresh.** `refresh()` re-analyzes on
   a size/mtime change and re-resolves *all* cross-file edges (a change in one
   file can create an edge in another), but a stale index silently answers about

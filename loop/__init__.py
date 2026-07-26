@@ -45,6 +45,8 @@ from .agent import (
     run_loop,
 )
 from .attribution import (
+    COMPONENTS as ATTRIBUTION_COMPONENTS,
+    MEASUREMENT_ORDER,
     METHOD as ATTRIBUTION_METHOD,
     Attribution,
     BlockGroup,
@@ -54,6 +56,8 @@ from .attribution import (
     api_token_counter,
     attribute,
     block_groups,
+    order_sensitivity,
+    order_sensitivity_text,
     reconcile,
 )
 from .render import KIND_COLORS, KIND_LABELS, KIND_ORDER, render_html, render_text
@@ -83,6 +87,10 @@ __all__ = [
     # attribution
     "attribute",
     "reconcile",
+    "order_sensitivity",
+    "order_sensitivity_text",
+    "MEASUREMENT_ORDER",
+    "ATTRIBUTION_COMPONENTS",
     "Attribution",
     "Segment",
     "BlockGroup",
