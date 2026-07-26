@@ -1,0 +1,39 @@
+description = "A plain bug report classifies as a bug and needs no tool call"
+input = """
+The export button on the reports page does nothing when I click it in Safari.
+It works fine in Chrome. This started yesterday.
+"""
+max_tokens = 400
+tags = ["structural", "core"]
+
+[[assertions]]
+id = "schema"
+type = "json_schema"
+allow_code_fence = true
+schema_json = '''
+{
+  "type": "object",
+  "required": ["category", "severity", "summary", "needs_human"],
+  "additionalProperties": false,
+  "properties": {
+    "category": {"type": "string", "enum": ["bug", "billing", "account", "other"]},
+    "severity": {"type": "string", "enum": ["low", "medium", "high"]},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 200},
+    "needs_human": {"type": "boolean"}
+  }
+}
+'''
+
+[[assertions]]
+id = "category_bug"
+type = "regex"
+pattern = '"category"\s*:\s*"bug"'
+
+[[assertions]]
+id = "no_tools"
+type = "no_tool_called"
+
+[[assertions]]
+id = "finished"
+type = "stop_reason"
+equals = "end_turn"

@@ -1,0 +1,104 @@
+{
+  "_comment": [
+    "Scripted model outputs for `python -m harness demo`. This file exists so the",
+    "harness can demonstrate itself with zero API credentials: the runner, the",
+    "assertions, the judge, the judge cache and the diff all execute for real; only",
+    "the model call is scripted. Outputs are chosen to produce one regression",
+    "(t06, judged), one improvement (t01, JSON parse), four unchanged passes, and",
+    "one unchanged failure (t07, invented category)."
+  ],
+  "responses": {
+    "triage.v1": {
+      "t01_plain_bug": {
+        "text": "Here is the triage result:\n\n```json\n{\n  \"category\": \"bug\",\n  \"severity\": \"medium\",\n  \"summary\": \"The reports export button is unresponsive in Safari but works in Chrome, starting yesterday.\",\n  \"needs_human\": false\n}\n```",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 512, "output_tokens": 96, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 512}
+      },
+      "t02_billing_question": {
+        "text": "{\n  \"category\": \"billing\",\n  \"severity\": \"medium\",\n  \"summary\": \"Customer was charged twice for the September invoice and wants the duplicate line item explained.\",\n  \"needs_human\": true\n}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 508, "output_tokens": 78, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 508}
+      },
+      "t03_outage_severity": {
+        "text": "{\n  \"category\": \"bug\",\n  \"severity\": \"high\",\n  \"summary\": \"Every dashboard page returns a 500 for the entire team ahead of a customer demo.\",\n  \"needs_human\": true\n}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 514, "output_tokens": 74, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 514}
+      },
+      "t04_account_lookup": {
+        "text": "I need to check the current plan on this account.",
+        "tool_calls": [{"name": "lookup_account", "input": {"email": "dana@example.com"}}],
+        "stop_reason": "tool_use",
+        "usage": {"input_tokens": 604, "output_tokens": 62, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 604}
+      },
+      "t05_no_pii_echo": {
+        "text": "{\n  \"category\": \"account\",\n  \"severity\": \"medium\",\n  \"summary\": \"Customer requests account closure and supplied sensitive identifiers, which are not repeated here.\",\n  \"needs_human\": true\n}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 528, "output_tokens": 72, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 528}
+      },
+      "t06_ambiguous_request": {
+        "text": "{\n  \"category\": \"other\",\n  \"severity\": \"low\",\n  \"summary\": \"Customer reports a recurring problem but does not say which feature is broken or when it last worked.\",\n  \"needs_human\": true\n}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 496, "output_tokens": 80, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 496}
+      },
+      "t07_feature_request": {
+        "text": "{\n  \"category\": \"feature\",\n  \"severity\": \"low\",\n  \"summary\": \"Customer would like a dark mode for night-time use; explicitly not urgent.\",\n  \"needs_human\": false\n}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 506, "output_tokens": 70, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 506}
+      }
+    },
+    "triage.v2": {
+      "t01_plain_bug": {
+        "text": "{\"category\": \"bug\", \"severity\": \"medium\", \"summary\": \"Reports export button is unresponsive in Safari, works in Chrome.\", \"needs_human\": false}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 548, "output_tokens": 54, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 548}
+      },
+      "t02_billing_question": {
+        "text": "{\"category\": \"billing\", \"severity\": \"medium\", \"summary\": \"Duplicate charge on the September invoice needs explanation.\", \"needs_human\": true}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 544, "output_tokens": 48, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 544}
+      },
+      "t03_outage_severity": {
+        "text": "{\"category\": \"bug\", \"severity\": \"high\", \"summary\": \"All dashboard pages return 500 for the whole team.\", \"needs_human\": true}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 550, "output_tokens": 46, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 550}
+      },
+      "t04_account_lookup": {
+        "text": "",
+        "tool_calls": [{"name": "lookup_account", "input": {"email": "dana@example.com"}}],
+        "stop_reason": "tool_use",
+        "usage": {"input_tokens": 640, "output_tokens": 40, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 640}
+      },
+      "t05_no_pii_echo": {
+        "text": "{\"category\": \"account\", \"severity\": \"medium\", \"summary\": \"Account closure requested; sensitive identifiers withheld.\", \"needs_human\": true}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 564, "output_tokens": 44, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 564}
+      },
+      "t06_ambiguous_request": {
+        "text": "{\"category\": \"other\", \"severity\": \"low\", \"summary\": \"Vague repeat complaint, no detail given.\", \"needs_human\": true}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 532, "output_tokens": 38, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 532}
+      },
+      "t07_feature_request": {
+        "text": "{\"category\": \"feature\", \"severity\": \"low\", \"summary\": \"Dark mode requested for night-time use, not urgent.\", \"needs_human\": false}",
+        "stop_reason": "end_turn",
+        "usage": {"input_tokens": 542, "output_tokens": 42, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 542}
+      }
+    }
+  },
+  "judge": {
+    "t06_ambiguous_request": [
+      {
+        "if_output_contains": "which feature is broken",
+        "verdict": "pass",
+        "confidence": 0.86,
+        "reasoning": "The summary names the two missing facts: which feature broke and when it last worked."
+      },
+      {
+        "verdict": "fail",
+        "confidence": 0.79,
+        "reasoning": "The summary says the complaint is vague but never states what information is needed to work it."
+      }
+    ]
+  },
+  "judge_usage": {"input_tokens": 890, "output_tokens": 64, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "total_prompt_tokens": 890}
+}

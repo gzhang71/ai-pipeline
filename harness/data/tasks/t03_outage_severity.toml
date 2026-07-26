@@ -1,0 +1,26 @@
+description = "A total outage must be severity=high and flagged for a human"
+input = """
+Nothing loads at all. Every page in the dashboard returns a 500 for our whole
+team, and we have a customer demo in an hour.
+"""
+max_tokens = 400
+tags = ["structural", "severity"]
+
+[[assertions]]
+id = "schema"
+type = "json_schema"
+schema_json = '''
+{
+  "type": "object",
+  "required": ["category", "severity", "needs_human"],
+  "properties": {
+    "severity": {"type": "string", "const": "high"},
+    "needs_human": {"type": "boolean", "const": true}
+  }
+}
+'''
+
+[[assertions]]
+id = "finished"
+type = "stop_reason"
+equals = "end_turn"

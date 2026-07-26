@@ -1,0 +1,27 @@
+description = "A pricing question classifies as billing at low severity"
+input = """
+I was charged twice for the September invoice. Can you tell me why there are two
+line items for the same period?
+"""
+max_tokens = 400
+tags = ["structural", "core"]
+
+[[assertions]]
+id = "json"
+type = "json_valid"
+
+[[assertions]]
+id = "category_billing"
+type = "regex"
+pattern = '"category"\s*:\s*"billing"'
+
+[[assertions]]
+id = "not_high_severity"
+type = "regex"
+pattern = '"severity"\s*:\s*"high"'
+negate = true
+
+[[assertions]]
+id = "finished"
+type = "stop_reason"
+equals = "end_turn"
