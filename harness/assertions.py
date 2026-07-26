@@ -37,6 +37,7 @@ STRUCTURAL_TYPES = frozenset(
         "length",
         "tool_called",
         "no_tool_called",
+        "no_tool_call_in_text",
         "stop_reason",
     }
 )
@@ -228,6 +229,57 @@ def _tool_called(spec: Mapping[str, Any], output: ModelOutput) -> tuple[bool, st
     return False, f"{label} called {len(calls)} time(s), expected >= {minimum} (called: {seen})"
 
 
+def _no_tool_call_in_text(spec: Mapping[str, Any], output: ModelOutput) -> tuple[bool, str]:
+    """Fail when the model *described* a tool call instead of emitting one.
+
+    With thinking disabled, a model can write a tool invocation into its
+    user-facing text rather than producing a `tool_use` block. The turn
+    succeeds, `stop_reason` is `end_turn`, no error is raised -- and the tool
+    never runs. In an agentic loop that text then pollutes the transcript.
+
+    This assertion makes the failure visible, which is what allows a
+    thinking-disabled prompt to be evaluated at all rather than forbidden.
+    It only fires when *no* structured tool call was made, so a turn that
+    both calls a tool and talks about it is not penalised.
+    """
+    if output.tool_calls:
+        return True, ""
+
+    names = spec.get("names")
+    if names is None:
+        known = sorted({c.name for c in output.tool_calls})
+        names = known or None
+    patterns = _tool_call_shapes(names)
+
+    for label, rx in patterns:
+        found = rx.search(output.text)
+        if found:
+            excerpt = found.group(0).strip().replace("\n", " ")[:120]
+            return False, (
+                f"no tool_use block was emitted, but the response text looks like "
+                f"a tool call ({label}): {excerpt!r}"
+            )
+    return True, ""
+
+
+def _tool_call_shapes(names: Any) -> list[tuple[str, re.Pattern[str]]]:
+    """Regexes for the ways a described-not-emitted call tends to look."""
+    shapes: list[tuple[str, re.Pattern[str]]] = [
+        ("xml tag", re.compile(r"<(?:antml:)?(?:function_calls|invoke|tool_use)\b[^>]*>")),
+        ("json envelope", re.compile(r'\{\s*"(?:type"\s*:\s*"tool_use|name"\s*:\s*")', re.I)),
+        ("fenced tool block", re.compile(r"```(?:tool_use|tool_call|function_call)\b", re.I)),
+    ]
+    if names:
+        alternation = "|".join(re.escape(str(n)) for n in names)
+        shapes.append(
+            (
+                "named invocation",
+                re.compile(rf"\b(?:{alternation})\s*\(\s*[\w\"']", re.I),
+            )
+        )
+    return shapes
+
+
 def _no_tool_called(spec: Mapping[str, Any], output: ModelOutput) -> tuple[bool, str]:
     name = spec.get("name")
     calls = [c for c in output.tool_calls if name is None or c.name == name]
@@ -253,6 +305,7 @@ _HANDLERS = {
     "tool_called": _tool_called,
     "no_tool_called": _no_tool_called,
     "stop_reason": _stop_reason,
+    "no_tool_call_in_text": _no_tool_call_in_text,
 }
 
 

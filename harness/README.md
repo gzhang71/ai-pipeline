@@ -186,7 +186,30 @@ passing *and* a failing test.
 | `length` | `min_chars`, `max_chars`, `min_words`, `max_words` | Output length bounds |
 | `tool_called` | `name` (optional = any), `count`, `min_count` | "tool X was called" |
 | `no_tool_called` | `name` (optional) | "no tool was called" |
+| `no_tool_call_in_text` | `names` (optional) | Fails if the model *described* a tool call instead of emitting one |
 | `stop_reason` | `equals` | `stop_reason == "end_turn"` / `"tool_use"` / … |
+
+### `no_tool_call_in_text` — evaluating thinking-disabled prompts
+
+With thinking disabled, a model can write a tool invocation into its visible
+text instead of emitting a `tool_use` block. The turn succeeds, `stop_reason`
+is `end_turn`, nothing errors — and the tool never runs. In an agentic loop
+that text then pollutes the transcript for every later turn.
+
+This assertion detects that shape (XML-style tags, a `tool_use` JSON envelope,
+a fenced `tool_use` block, or — when you pass `names` — a bare `name(...)`
+call). It only fires when *no* structured tool call was made, so a turn that
+both calls a tool and talks about it is not penalised.
+
+It exists so that a thinking-disabled prompt can be *measured* rather than
+forbidden. Add it alongside `tool_called` on any task where the tool actually
+has to run:
+
+```toml
+[[assertions]]
+type = "no_tool_call_in_text"
+names = ["lookup_ticket"]
+```
 
 `json_valid` and `json_schema` unwrap a *surrounding* code fence by default,
 because models fence JSON constantly. A fence with a preamble in front of it

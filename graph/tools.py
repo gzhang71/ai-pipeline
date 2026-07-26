@@ -23,6 +23,9 @@ from .builder import CodeGraph, Node
 MAX_READ_LINES = 400
 DEFAULT_SEARCH_LIMIT = 15
 MIN_SUBSTRING_TERM = 4
+EXACT_NAME_BONUS = 6.0      # query is exactly this symbol's name
+EXACT_DEFINE_BONUS = 5.0    # query is exactly a name this module defines
+TEST_SYMBOL_PENALTY = 2.5   # demote tests; they mention everything they exercise
 
 # Question words carry no signal about which symbol is wanted, and matching them
 # ranks arbitrary code above the real hit. The baseline retriever gets the same
@@ -184,6 +187,18 @@ _SPLIT = re.compile(r"[^0-9a-zA-Z]+")
 _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
+def _is_test_symbol(node: Node) -> bool:
+    """True for symbols that live in a test module or name a test."""
+    tail = node.module.rsplit(".", 1)[-1]
+    return (
+        tail.startswith("test_")
+        or tail.endswith("_test")
+        or tail == "conftest"
+        or node.name.startswith("test_")
+        or node.name.startswith("Test")
+    )
+
+
 def tokenize(text: str) -> list[str]:
     """Lowercase word tokens, with snake_case and camelCase split apart."""
     out: list[str] = []
@@ -227,7 +242,7 @@ class GraphTools:
         for node in self.graph.nodes.values():
             if wanted and node.kind not in wanted:
                 continue
-            score = self._score(node, terms)
+            score = self._score(node, terms, query)
             if score > 0:
                 hits.append(SearchHit(node, score))
         hits.sort(key=lambda h: (-h.score, h.node.path, h.node.lineno))
@@ -255,7 +270,7 @@ class GraphTools:
             match["defines_names"] = list(node.defines)
         return match
 
-    def _score(self, node: Node, terms: Iterable[str]) -> float:
+    def _score(self, node: Node, terms: Iterable[str], raw_query: str = "") -> float:
         bag = self._haystack[node.id]
         name_tokens = set(tokenize(node.name))
         # A module-level constant's name is an identifier too, so an exact hit
@@ -279,6 +294,25 @@ class GraphTools:
                 score += 0.35
         if score and node.kind in ("function", "method", "class"):
             score += 0.2  # mild preference for callable symbols over whole modules
+
+        # An exact identifier is a much stronger signal than a token overlap.
+        # Without this, searching "MODEL" ranks every class whose camelCase name
+        # happens to contain "Model" above the module that actually defines the
+        # constant, because both merely tokenize to {"model"}.
+        exact = raw_query.strip()
+        if exact:
+            if exact == node.name:
+                score += EXACT_NAME_BONUS
+            elif exact in node.defines:
+                score += EXACT_DEFINE_BONUS
+            elif exact.lower() == node.name.lower():
+                score += EXACT_NAME_BONUS / 2
+
+        # Tests mention the symbols they exercise, so they match nearly every
+        # query about real code. Demote rather than exclude: sometimes the test
+        # IS what you are looking for.
+        if score and _is_test_symbol(node):
+            score -= TEST_SYMBOL_PENALTY
         return score
 
     # -- tool 2 ----------------------------------------------------------

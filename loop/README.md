@@ -168,8 +168,28 @@ a claim that each segment's number is the "true" cost of that segment.
 **2. Deltas are marginal, and therefore order-dependent.** A segment's number is
 its cost *given everything measured before it*, not an intrinsic cost. Measure
 the same segments in a different order and you get slightly different numbers.
-This is the real error term, and it is not quantified by a single scalar —
-that's why the measurement order is on the header rather than buried. Where the
+This is the real error term. It is now measurable rather than merely declared:
+`attribute(..., measurement_order=...)` takes any permutation of `messages`,
+`tool_schemas`, `system_prompt` (framing is always the base), and
+`order_sensitivity()` sweeps all six and reports per-kind `min`/`max`/`spread`:
+
+```python
+from loop import order_sensitivity, order_sensitivity_text
+print(order_sensitivity_text(order_sensitivity(messages, system=..., tools=...)))
+```
+
+The total is invariant under every order — only the split between segments
+moves. Treat `max_spread_fraction` as the error bar on any single segment's
+number.
+
+⚠️ **Run it against `api_token_counter` or the result is meaningless.** Any
+chars-per-token heuristic — including this package's offline test double — is
+linear, and a linear counter is order-independent by construction, so it always
+reports zero spread. That is a property of the counter, not evidence about the
+real tokenizer. The report says which case you are in via
+`counter_is_order_sensitive`.
+
+The measurement order stays on the header rather than buried. Where the
 tokenizer merges across a boundary a delta can come out **negative**; we report
 negatives as-is rather than clamping, and count them in
 `prompt_tokens.negative_segments`. A nonzero count there is a signal that a
