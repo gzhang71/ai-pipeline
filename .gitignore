@@ -1,3 +1,8 @@
+# IDE project files (JetBrains). The repo has no XML of its own, so a blanket
+# rule is safe today -- if you ever add a real .xml, negate it explicitly.
+*.iml
+*.xml
+
 __pycache__/
 *.py[cod]
 .venv/
