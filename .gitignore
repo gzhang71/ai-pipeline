@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Run artifacts from the profiler / benches / harness
+runs/
+*.jsonl
+!**/fixtures/*.jsonl
+.graph-index.json

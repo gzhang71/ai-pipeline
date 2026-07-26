@@ -1,0 +1,26 @@
+description = "A feature request is category=other, low severity, and briefly summarized"
+input = """
+Would you consider adding dark mode? I work at night and the dashboard is
+blinding. Not urgent, just a wish.
+"""
+max_tokens = 400
+tags = ["structural", "brevity"]
+
+[[assertions]]
+id = "json"
+type = "json_valid"
+
+[[assertions]]
+id = "category_other"
+type = "regex"
+pattern = '"category"\s*:\s*"other"'
+
+[[assertions]]
+id = "low_severity"
+type = "regex"
+pattern = '"severity"\s*:\s*"low"'
+
+[[assertions]]
+id = "brief"
+type = "length"
+max_words = 45

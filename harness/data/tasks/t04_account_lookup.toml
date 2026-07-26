@@ -1,0 +1,31 @@
+description = "A question that depends on account state must call the lookup tool"
+input = """
+Am I still on the Team plan? My colleague says we were moved to Business last
+month but I never got an email about it. My login is dana@example.com.
+"""
+max_tokens = 500
+tags = ["tools"]
+
+[[tools]]
+name = "lookup_account"
+description = "Look up a customer's current plan and billing state by login email."
+input_schema_json = '''
+{
+  "type": "object",
+  "properties": {
+    "email": {"type": "string", "description": "The customer's login email"}
+  },
+  "required": ["email"],
+  "additionalProperties": false
+}
+'''
+
+[[assertions]]
+id = "called_lookup"
+type = "tool_called"
+name = "lookup_account"
+
+[[assertions]]
+id = "stopped_for_tool"
+type = "stop_reason"
+equals = "tool_use"

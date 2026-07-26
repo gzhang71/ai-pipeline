@@ -1,0 +1,29 @@
+description = """
+A vague ticket should be routed to a human and should say what is missing.
+This is the tier-2 example: "did it name the missing information" is a judgment
+no regex can make, so it is graded by the versioned judge prompt.
+"""
+input = """
+it's broken again, same as before. please fix asap
+"""
+max_tokens = 400
+tags = ["judge", "ambiguity"]
+
+[[assertions]]
+id = "json"
+type = "json_valid"
+
+[[assertions]]
+id = "flagged_for_human"
+type = "regex"
+pattern = '"needs_human"\s*:\s*true'
+
+[[assertions]]
+id = "asks_for_specifics"
+type = "judge"
+criterion = """
+The summary states what specific information is missing before this ticket can
+be worked -- for example which product area, which error, or when it last
+worked. A summary that only restates that the ticket is vague, or that guesses
+at a cause without saying what it needs, does not meet the criterion.
+"""
