@@ -313,6 +313,45 @@ CHECKS: dict[str, tuple[str, str, Callable[[], dict[str, Any]]]] = {
 }
 
 
+def preflight() -> str | None:
+    """Cheapest possible probe that the account can actually be used.
+
+    Returns an actionable message, or None when the API is reachable.
+
+    `count_tokens` is not billed per token, but it is still gated on the
+    organization having a credit balance -- an unfunded org gets the same 400
+    as any other endpoint. So there is no tier of this script that runs for
+    free on an empty account, and it is worth finding that out in one call
+    rather than five.
+    """
+    import anthropic
+
+    try:
+        get_client().messages.count_tokens(
+            model=MODEL, messages=[{"role": "user", "content": "."}]
+        )
+    except anthropic.BadRequestError as exc:
+        text = str(exc)
+        if "credit balance" in text.lower():
+            return (
+                "Authentication works, but the organization has no credit balance,\n"
+                "so every endpoint returns 400 -- including count_tokens, which is\n"
+                "free per token but still requires a funded account.\n\n"
+                "  Add credits: https://console.anthropic.com/settings/billing\n\n"
+                f"Active account: run `ant auth status` to confirm which org is in use.\n"
+                f"API said: {text.strip()[:200]}"
+            )
+        return f"The API rejected a minimal request:\n  {text.strip()[:300]}"
+    except anthropic.AuthenticationError as exc:
+        return (
+            "Credentials were found but rejected. Re-run `ant auth login`, or check\n"
+            f"that no stale ANTHROPIC_API_KEY is shadowing the profile.\n  {exc}"
+        )
+    except Exception as exc:  # network, DNS, proxy
+        return f"Could not reach the API: {type(exc).__name__}: {exc}"
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--list", action="store_true", help="list checks and exit")
@@ -337,6 +376,11 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    problem = preflight()
+    if problem:
+        print(problem, file=sys.stderr)
+        return 3
 
     order = {"free": 0, "cheap": 1, "full": 2}
     selected = list(args.check)
