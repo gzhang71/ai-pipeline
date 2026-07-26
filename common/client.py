@@ -73,6 +73,35 @@ def has_credentials() -> bool:
     return os.path.isdir(os.path.join(config_dir, "credentials"))
 
 
+@functools.lru_cache(maxsize=1)
+def api_is_usable() -> bool:
+    """True when a minimal live request actually succeeds.
+
+    `has_credentials()` only reports that a key or profile *exists*. Several
+    states present as credentialed-but-unusable and fail every call:
+
+      - the organization has no credit balance (400 on every endpoint,
+        including `count_tokens`, which is free per token but still gated)
+      - the key was revoked, or a stale ANTHROPIC_API_KEY shadows the profile
+      - the network cannot reach the API at all
+
+    Tests that would hit the API should skip on this rather than on
+    `has_credentials()`, otherwise a valid-but-unusable account turns the whole
+    suite red for a reason that has nothing to do with the code under test.
+
+    Probes once per process and caches; costs one unbilled `count_tokens` call.
+    """
+    if not has_credentials():
+        return False
+    try:
+        get_client().messages.count_tokens(
+            model=MODEL, messages=[{"role": "user", "content": "."}]
+        )
+    except Exception:
+        return False
+    return True
+
+
 def count_tokens(
     messages: Iterable[dict[str, Any]],
     *,

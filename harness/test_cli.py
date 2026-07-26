@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from common.client import has_credentials
+from common.client import api_is_usable, has_credentials
 from harness import cli
 from harness.model import AnthropicClient, ModelRequest
 from harness.prompts import default_prompt_dir
@@ -164,7 +164,7 @@ def test_anthropic_client_refuses_to_build_without_credentials(monkeypatch):
         )
 
 
-@pytest.mark.skipif(not has_credentials(), reason="no Anthropic credentials in this environment")
+@pytest.mark.skipif(not api_is_usable(), reason="live API not usable (no credentials, or unfunded org)")
 def test_live_smoke():
     """The only test that would touch the API. Skipped by default."""
     prompts = __import__("harness").load_prompts(default_prompt_dir())

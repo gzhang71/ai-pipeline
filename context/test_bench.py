@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from common.client import has_credentials
+from common.client import api_is_usable, has_credentials
 from context.bench import (
     LiveClient,
     format_report,
@@ -324,12 +324,12 @@ class TestLivePathsAreGuarded:
         with pytest.raises(RuntimeError, match="no credentials"):
             LiveClient()
 
-    @pytest.mark.skipif(not has_credentials(), reason="no API credentials")
+    @pytest.mark.skipif(not api_is_usable(), reason="live API not usable (no credentials, or unfunded org)")
     def test_exact_token_counting_against_the_api(self):
         counter = ApiTokenCounter()
         assert counter.count([{"role": "user", "content": "hello"}]) > 0
 
-    @pytest.mark.skipif(not has_credentials(), reason="no API credentials")
+    @pytest.mark.skipif(not api_is_usable(), reason="live API not usable (no credentials, or unfunded org)")
     def test_bench_against_the_live_api(self):
         report = run_bench(
             strategies=[TailTruncation()],

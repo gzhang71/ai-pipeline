@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from common.client import has_credentials
+from common.client import api_is_usable, has_credentials
 
 from graph.agent import build_outline, run_jit_agent
 from graph.baseline import (
@@ -368,7 +368,7 @@ def test_question_grading_is_strict():
 # -- live path is guarded ------------------------------------------------
 
 
-@pytest.mark.skipif(not has_credentials(), reason="no API credentials in this env")
+@pytest.mark.skipif(not api_is_usable(), reason="live API not usable (no credentials, or unfunded org)")
 def test_live_comparison_smoke(sample_graph: CodeGraph):  # pragma: no cover - live
     from common.client import get_client
 
